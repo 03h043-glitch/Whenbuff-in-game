@@ -8,7 +8,7 @@ WoW Classic addon for showing upcoming WhenBuff world buff drops for the realm y
 - Opens a movable in-game window for that realm automatically.
 - Shows today's upcoming world buffs from generated WhenBuff data.
 - Shows a live `HH:MM:SS` countdown to the next buff.
-- Includes a resizable mini window with the next buff icon, shorthand name, countdown, faction-aware Onyxia filtering, and a final-hour fill bar.
+- Includes a resizable mini window with the next buff icon, shorthand name, countdown, and faction-aware Onyxia filtering.
 - Prints chat reminders 1 hour, 30 minutes, 15 minutes, and 5 minutes before a buff drops.
 
 ## Important Data Note
