@@ -10,6 +10,7 @@ local rows = {}
 local miniFrame
 local optionsFrame
 local optionControls = {}
+local lastViewRefresh = 0
 
 local MAIN_DEFAULT_WIDTH = 430
 local MAIN_DEFAULT_HEIGHT = 360
@@ -29,6 +30,7 @@ local MINI_RESIZE_GRIP_SIZE = 42
 local MAIN_BG_INSET = 7
 local MINI_BG_INSET = 4
 local OPTIONS_BG_INSET = 5
+local AUTO_VIEW_REFRESH_SECONDS = 60
 
 local LayoutMainWindow
 local LayoutMiniWindow
@@ -832,7 +834,7 @@ function LayoutMainWindow()
 
     WhenBuff.generatedText:SetWidth(math.max(120, width - 230))
 
-    WhenBuff.refreshButton:SetPoint("BOTTOMRIGHT", WhenBuff, "BOTTOMRIGHT", -padding, buttonY)
+    WhenBuff.refreshButton:SetPoint("BOTTOMRIGHT", WhenBuff, "BOTTOMRIGHT", -(padding + RESIZE_GRIP_SIZE + 10), buttonY)
     WhenBuff.optionsButton:SetPoint("RIGHT", WhenBuff.refreshButton, "LEFT", -8, 0)
     WhenBuff.miniButton:SetPoint("RIGHT", WhenBuff.optionsButton, "LEFT", -8, 0)
     WhenBuff.resizeGrip:SetSize(RESIZE_GRIP_SIZE, RESIZE_GRIP_SIZE)
@@ -907,7 +909,7 @@ local function BuildWindow()
     refreshButton:SetText("Refresh")
     refreshButton:SetScript("OnClick", function()
         RefreshWindow()
-        UpdateCountdown()
+        Print("View refreshed from loaded Data.lua. New WhenBuff website data requires updating Data.lua and /reload.")
     end)
     WhenBuff.refreshButton = refreshButton
 
@@ -949,6 +951,7 @@ function RefreshWindow()
     playerFaction = GetPlayerFaction()
     currentServer = FindCurrentServer()
     currentEvents = GetServerEvents(currentServer)
+    lastViewRefresh = time()
 
     local generatedText = DATA.generatedAt and ("Data: " .. DATA.generatedAt) or "Data: unavailable"
     WhenBuff.generatedText:SetText(generatedText)
@@ -1022,8 +1025,12 @@ local function CheckReminders()
 end
 
 local function OnTick()
-    UpdateCountdown()
-    UpdateMiniWindow()
+    if time() - lastViewRefresh >= AUTO_VIEW_REFRESH_SECONDS then
+        RefreshWindow()
+    else
+        UpdateCountdown()
+        UpdateMiniWindow()
+    end
     CheckReminders()
 end
 
@@ -1067,7 +1074,7 @@ function HandleSlashCommand(input)
         WhenBuff:Hide()
     elseif input == "refresh" then
         RefreshWindow()
-        Print("Display refreshed from loaded data.")
+        Print("View refreshed from loaded Data.lua. New WhenBuff website data requires updating Data.lua and /reload.")
     elseif input == "mini" then
         ToggleMiniWindow()
     elseif input == "options" or input == "config" then
