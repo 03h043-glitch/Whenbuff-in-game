@@ -31,8 +31,11 @@ Then restart WoW or run `/reload`.
 - `/wb` or `/whenbuff`: toggle the window
 - `/wb show`: show the window
 - `/wb hide`: hide the window
+- `/wb mini`: toggle the resizable mini window
 - `/wb refresh`: rebuild the current realm view from loaded data
 - `/wb test`: print a test reminder message
+
+The mini window can be dragged, resized from its bottom-right corner, and hidden with right click.
 
 ## Updating Data Locally
 
