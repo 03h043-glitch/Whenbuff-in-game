@@ -5,8 +5,19 @@ local DATA = WhenBuffInGame_Data or { servers = {}, serverOrder = {} }
 local DB
 local currentServer
 local currentEvents = {}
+local playerFaction
 local rows = {}
 local ROW_WIDTH = 372
+local MINI_DEFAULT_WIDTH = 178
+local MINI_DEFAULT_HEIGHT = 64
+local MINI_MIN_WIDTH = 118
+local MINI_MIN_HEIGHT = 42
+local MINI_MAX_WIDTH = 360
+local MINI_MAX_HEIGHT = 140
+local miniFrame
+local GetNextEvent
+local HandleSlashCommand
+local ToggleMiniWindow
 local reminderThresholds = { 3600, 1800, 900, 300 }
 local reminderLabels = {
     [3600] = "1 hour",
@@ -22,6 +33,34 @@ local COLORS = {
     gold = "|cffffcc66",
     red = "|cffff6666",
     reset = "|r",
+}
+
+local BUFF_STYLES = {
+    default = {
+        short = "BUFF",
+        icon = "Interface\\Icons\\Spell_Holy_MagicalSentry",
+        color = { 0.18, 0.18, 0.18, 0.94 },
+    },
+    rend = {
+        short = "REND",
+        icon = "Interface\\Icons\\Ability_Warrior_Rampage",
+        color = { 0.95, 0.42, 0.08, 0.94 },
+    },
+    onyHorde = {
+        short = "ONY H",
+        icon = "Interface\\Icons\\INV_Misc_Head_Dragon_01",
+        color = { 0.72, 0.04, 0.04, 0.94 },
+    },
+    onyAlliance = {
+        short = "ONY A",
+        icon = "Interface\\Icons\\INV_Misc_Head_Dragon_01",
+        color = { 0.05, 0.25, 0.80, 0.94 },
+    },
+    zg = {
+        short = "ZG",
+        icon = "Interface\\Icons\\Ability_Creature_Poison_05",
+        color = { 0.05, 0.52, 0.22, 0.94 },
+    },
 }
 
 local function Print(message)
@@ -51,6 +90,17 @@ local function GetPlayerRealmName()
     end
 
     return ""
+end
+
+local function GetPlayerFaction()
+    if UnitFactionGroup then
+        local faction = UnitFactionGroup("player")
+        if faction then
+            return string.lower(faction)
+        end
+    end
+
+    return nil
 end
 
 local function FindCurrentServer()
@@ -98,6 +148,59 @@ local function TitleCase(value)
     return string.upper(string.sub(value, 1, 1)) .. string.sub(value, 2)
 end
 
+local function SetTextureColor(texture, color)
+    if texture.SetColorTexture then
+        texture:SetColorTexture(unpack(color))
+    else
+        texture:SetTexture(unpack(color))
+    end
+end
+
+local function IsOnyxiaEvent(event)
+    local buffType = string.lower(event.type or "")
+    return buffType == "onyxia" or buffType == "nefarian"
+end
+
+local function ShouldShowEventForPlayer(event)
+    if not IsOnyxiaEvent(event) then
+        return true
+    end
+
+    local faction = string.lower(event.faction or "")
+    if faction == "" or faction == "both" or faction == "all" then
+        return true
+    end
+
+    if not playerFaction then
+        return true
+    end
+
+    return faction == playerFaction
+end
+
+local function GetBuffStyle(event)
+    local buffType = string.lower(event and event.type or "")
+
+    if buffType == "rend" then
+        return BUFF_STYLES.rend
+    end
+
+    if buffType == "zulgurub" or buffType == "zg" or buffType == "zandalar" then
+        return BUFF_STYLES.zg
+    end
+
+    if buffType == "onyxia" or buffType == "nefarian" then
+        local faction = string.lower(event.faction or playerFaction or "")
+        if faction == "horde" then
+            return BUFF_STYLES.onyHorde
+        end
+
+        return BUFF_STYLES.onyAlliance
+    end
+
+    return BUFF_STYLES.default
+end
+
 local function GetEventLabel(event)
     local faction = event.faction or "both"
     if faction == "both" or faction == "all" then
@@ -124,6 +227,15 @@ local function EnsureDatabase()
     DB.y = DB.y or 0
     DB.scale = DB.scale or 1
     DB.sentReminders = DB.sentReminders or {}
+    DB.mini = DB.mini or {}
+    if DB.mini.hidden == nil then
+        DB.mini.hidden = true
+    end
+    DB.mini.point = DB.mini.point or "CENTER"
+    DB.mini.x = DB.mini.x or 0
+    DB.mini.y = DB.mini.y or -120
+    DB.mini.width = DB.mini.width or MINI_DEFAULT_WIDTH
+    DB.mini.height = DB.mini.height or MINI_DEFAULT_HEIGHT
 end
 
 local function ClearOldReminderKeys()
@@ -149,13 +261,77 @@ local function GetServerEvents(serverName)
 
     local events = {}
     for _, event in ipairs(server.buffs) do
-        if type(event.timestamp) == "number" then
+        if type(event.timestamp) == "number" and ShouldShowEventForPlayer(event) then
             table.insert(events, event)
         end
     end
 
     SortEvents(events)
     return events
+end
+
+local function SaveMiniPosition()
+    if not miniFrame or not DB or not DB.mini then
+        return
+    end
+
+    local point, _, _, x, y = miniFrame:GetPoint(1)
+    local width, height = miniFrame:GetSize()
+    DB.mini.point = point or "CENTER"
+    DB.mini.x = x or 0
+    DB.mini.y = y or 0
+    DB.mini.width = width or MINI_DEFAULT_WIDTH
+    DB.mini.height = height or MINI_DEFAULT_HEIGHT
+end
+
+local function LayoutMiniWindow()
+    if not miniFrame then
+        return
+    end
+
+    local width, height = miniFrame:GetSize()
+    local padding = math.max(4, math.min(10, height * 0.12))
+    local iconSize = math.max(26, math.min(height - (padding * 2), width * 0.32))
+    local shortSize = math.max(9, math.min(22, height * 0.28))
+    local timerSize = math.max(11, math.min(30, height * 0.38))
+
+    miniFrame.icon:SetSize(iconSize, iconSize)
+    miniFrame.icon:ClearAllPoints()
+    miniFrame.icon:SetPoint("LEFT", miniFrame, "LEFT", padding, 0)
+
+    miniFrame.shortText:SetFont(STANDARD_TEXT_FONT, shortSize, "OUTLINE")
+    miniFrame.shortText:ClearAllPoints()
+    miniFrame.shortText:SetPoint("TOPLEFT", miniFrame.icon, "TOPRIGHT", padding, -padding)
+    miniFrame.shortText:SetPoint("RIGHT", miniFrame, "RIGHT", -padding, 0)
+
+    miniFrame.timerText:SetFont(STANDARD_TEXT_FONT, timerSize, "OUTLINE")
+    miniFrame.timerText:ClearAllPoints()
+    miniFrame.timerText:SetPoint("BOTTOMLEFT", miniFrame.icon, "BOTTOMRIGHT", padding, padding)
+    miniFrame.timerText:SetPoint("RIGHT", miniFrame, "RIGHT", -padding, 0)
+
+    miniFrame.resizeGrip:SetSize(math.max(10, height * 0.18), math.max(10, height * 0.18))
+end
+
+local function UpdateMiniWindow()
+    if not miniFrame then
+        return
+    end
+
+    local nextEvent = GetNextEvent(currentEvents)
+    if not currentServer or not nextEvent then
+        local style = BUFF_STYLES.default
+        SetTextureColor(miniFrame.background, style.color)
+        miniFrame.icon:SetTexture(style.icon)
+        miniFrame.shortText:SetText("NONE")
+        miniFrame.timerText:SetText("--")
+        return
+    end
+
+    local style = GetBuffStyle(nextEvent)
+    SetTextureColor(miniFrame.background, style.color)
+    miniFrame.icon:SetTexture(style.icon)
+    miniFrame.shortText:SetText(style.short)
+    miniFrame.timerText:SetText(FormatDuration(nextEvent.timestamp - time()))
 end
 
 local function GetTodayEvents(events)
@@ -172,7 +348,7 @@ local function GetTodayEvents(events)
     return todayEvents
 end
 
-local function GetNextEvent(events)
+function GetNextEvent(events)
     local now = time()
 
     for _, event in ipairs(events) do
@@ -264,6 +440,7 @@ local function RefreshRows(todayEvents)
 end
 
 local function RefreshWindow()
+    playerFaction = GetPlayerFaction()
     currentServer = FindCurrentServer()
     currentEvents = GetServerEvents(currentServer)
 
@@ -273,7 +450,7 @@ local function RefreshWindow()
     if currentServer then
         local server = DATA.servers[currentServer]
         WhenBuff.title:SetText("WhenBuff - " .. currentServer)
-        WhenBuff.realmText:SetText(string.format("%s realm, %s", server.region or "Unknown", server.timezone or "server time"))
+        WhenBuff.realmText:SetText(string.format("%s realm, %s, %s", server.region or "Unknown", server.timezone or "server time", TitleCase(playerFaction or "unknown faction")))
         WhenBuff.emptyText:SetText("No buffs remaining today.")
         RefreshRows(GetTodayEvents(currentEvents))
     else
@@ -282,6 +459,8 @@ local function RefreshWindow()
         WhenBuff.emptyText:SetText("This realm is not currently returned by WhenBuff.")
         RefreshRows({})
     end
+
+    UpdateMiniWindow()
 end
 
 local function UpdateCountdown()
@@ -330,6 +509,7 @@ end
 
 local function OnTick()
     UpdateCountdown()
+    UpdateMiniWindow()
     CheckReminders()
 end
 
@@ -339,6 +519,77 @@ local function SavePosition()
     DB.x = x or 0
     DB.y = y or 0
     DB.scale = WhenBuff:GetScale() or 1
+end
+
+local function BuildMiniWindow()
+    miniFrame = CreateFrame("Frame", "WhenBuffInGameMiniFrame", UIParent, "BackdropTemplate")
+    miniFrame:SetSize(DB.mini.width, DB.mini.height)
+    miniFrame:SetPoint(DB.mini.point, UIParent, DB.mini.point, DB.mini.x, DB.mini.y)
+    miniFrame:SetMovable(true)
+    miniFrame:SetResizable(true)
+    miniFrame:EnableMouse(true)
+    miniFrame:RegisterForDrag("LeftButton")
+    miniFrame:SetClampedToScreen(true)
+    miniFrame:SetFrameStrata("MEDIUM")
+    miniFrame:SetBackdrop({
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 12,
+        insets = { left = 2, right = 2, top = 2, bottom = 2 },
+    })
+
+    if miniFrame.SetResizeBounds then
+        miniFrame:SetResizeBounds(MINI_MIN_WIDTH, MINI_MIN_HEIGHT, MINI_MAX_WIDTH, MINI_MAX_HEIGHT)
+    elseif miniFrame.SetMinResize and miniFrame.SetMaxResize then
+        miniFrame:SetMinResize(MINI_MIN_WIDTH, MINI_MIN_HEIGHT)
+        miniFrame:SetMaxResize(MINI_MAX_WIDTH, MINI_MAX_HEIGHT)
+    end
+
+    miniFrame.background = miniFrame:CreateTexture(nil, "BACKGROUND")
+    miniFrame.background:SetAllPoints(miniFrame)
+
+    miniFrame.icon = miniFrame:CreateTexture(nil, "ARTWORK")
+    miniFrame.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+    miniFrame.shortText = miniFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    miniFrame.shortText:SetJustifyH("LEFT")
+    miniFrame.shortText:SetTextColor(1, 1, 1)
+
+    miniFrame.timerText = miniFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
+    miniFrame.timerText:SetJustifyH("LEFT")
+    miniFrame.timerText:SetTextColor(1, 1, 1)
+
+    miniFrame.resizeGrip = CreateFrame("Button", nil, miniFrame)
+    miniFrame.resizeGrip:SetPoint("BOTTOMRIGHT", miniFrame, "BOTTOMRIGHT", -2, 2)
+    miniFrame.resizeGrip:SetScript("OnMouseDown", function()
+        miniFrame:StartSizing("BOTTOMRIGHT")
+    end)
+    miniFrame.resizeGrip:SetScript("OnMouseUp", function()
+        miniFrame:StopMovingOrSizing()
+        SaveMiniPosition()
+        LayoutMiniWindow()
+    end)
+
+    miniFrame:SetScript("OnDragStart", function()
+        miniFrame:StartMoving()
+    end)
+    miniFrame:SetScript("OnDragStop", function()
+        miniFrame:StopMovingOrSizing()
+        SaveMiniPosition()
+    end)
+    miniFrame:SetScript("OnMouseUp", function(_, button)
+        if button == "RightButton" then
+            DB.mini.hidden = true
+            miniFrame:Hide()
+        end
+    end)
+    miniFrame:SetScript("OnSizeChanged", function()
+        LayoutMiniWindow()
+        SaveMiniPosition()
+    end)
+
+    LayoutMiniWindow()
+    UpdateMiniWindow()
+    miniFrame:Hide()
 end
 
 local function BuildWindow()
@@ -415,6 +666,15 @@ local function BuildWindow()
         UpdateCountdown()
     end)
     WhenBuff.refreshButton = refreshButton
+
+    local miniButton = CreateFrame("Button", nil, WhenBuff, "UIPanelButtonTemplate")
+    miniButton:SetSize(56, 22)
+    miniButton:SetPoint("RIGHT", refreshButton, "LEFT", -8, 0)
+    miniButton:SetText("Mini")
+    miniButton:SetScript("OnClick", function()
+        HandleSlashCommand("mini")
+    end)
+    WhenBuff.miniButton = miniButton
 end
 
 local function ShowWindow()
@@ -433,7 +693,22 @@ local function ToggleWindow()
     end
 end
 
-local function HandleSlashCommand(input)
+function ToggleMiniWindow()
+    if not miniFrame then
+        return
+    end
+
+    if miniFrame:IsShown() then
+        DB.mini.hidden = true
+        miniFrame:Hide()
+    else
+        DB.mini.hidden = false
+        UpdateMiniWindow()
+        miniFrame:Show()
+    end
+end
+
+function HandleSlashCommand(input)
     input = string.lower(input or "")
 
     if input == "show" then
@@ -445,6 +720,8 @@ local function HandleSlashCommand(input)
         RefreshWindow()
         UpdateCountdown()
         Print("Display refreshed from loaded data.")
+    elseif input == "mini" then
+        ToggleMiniWindow()
     elseif input == "test" then
         Print("Test reminder: Onyxia drops in 5 minutes at 20:00.")
     else
@@ -455,12 +732,17 @@ end
 local function OnLogin()
     EnsureDatabase()
     BuildWindow()
+    BuildMiniWindow()
     ClearOldReminderKeys()
     RefreshWindow()
     UpdateCountdown()
 
     if not DB.hidden then
         WhenBuff:Show()
+    end
+
+    if not DB.mini.hidden then
+        miniFrame:Show()
     end
 
     C_Timer.NewTicker(1, OnTick)
