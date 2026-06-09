@@ -26,7 +26,9 @@ local MINI_MAX_WIDTH = 460
 local MINI_MAX_HEIGHT = 170
 local RESIZE_GRIP_SIZE = 34
 local MINI_RESIZE_GRIP_SIZE = 42
-local TIMER_FILL_WINDOW = 3600
+local MAIN_BG_INSET = 7
+local MINI_BG_INSET = 4
+local OPTIONS_BG_INSET = 5
 
 local LayoutMainWindow
 local LayoutMiniWindow
@@ -60,7 +62,6 @@ local BUFF_STYLES = {
         spellId = 23769,
         fallbackIcon = "Interface\\Icons\\Spell_Holy_MagicalSentry",
         color = { 0.18, 0.18, 0.18, 0.94 },
-        fillColor = { 0.36, 0.36, 0.36, 0.88 },
         textColor = { 0.92, 0.90, 0.82, 1 },
     },
     rend = {
@@ -68,7 +69,6 @@ local BUFF_STYLES = {
         spellId = 16609,
         fallbackIcon = "Interface\\Icons\\Spell_Arcane_TeleportOrgrimmar",
         color = { 0.95, 0.42, 0.08, 0.94 },
-        fillColor = { 1.00, 0.66, 0.16, 0.92 },
         textColor = { 1.00, 0.60, 0.20, 1 },
     },
     onyHorde = {
@@ -76,7 +76,6 @@ local BUFF_STYLES = {
         spellId = 22888,
         fallbackIcon = "Interface\\Icons\\INV_Misc_Head_Dragon_01",
         color = { 0.72, 0.04, 0.04, 0.94 },
-        fillColor = { 1.00, 0.18, 0.14, 0.90 },
         textColor = { 1.00, 0.30, 0.25, 1 },
     },
     onyAlliance = {
@@ -84,7 +83,6 @@ local BUFF_STYLES = {
         spellId = 22888,
         fallbackIcon = "Interface\\Icons\\INV_Misc_Head_Dragon_01",
         color = { 0.05, 0.25, 0.80, 0.94 },
-        fillColor = { 0.18, 0.50, 1.00, 0.90 },
         textColor = { 0.35, 0.62, 1.00, 1 },
     },
     zg = {
@@ -92,7 +90,6 @@ local BUFF_STYLES = {
         spellId = 24425,
         fallbackIcon = "Interface\\Icons\\Ability_Creature_Poison_05",
         color = { 0.05, 0.52, 0.22, 0.94 },
-        fillColor = { 0.18, 0.78, 0.34, 0.90 },
         textColor = { 0.28, 0.95, 0.44, 1 },
     },
 }
@@ -141,6 +138,12 @@ local function SetVerticalGradient(texture, topColor, bottomColor)
     else
         SetTextureColor(texture, bottomColor)
     end
+end
+
+local function InsetTexture(texture, parent, inset)
+    texture:ClearAllPoints()
+    texture:SetPoint("TOPLEFT", parent, "TOPLEFT", inset, -inset)
+    texture:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -inset, inset)
 end
 
 local function NormalizeRealmName(name)
@@ -374,19 +377,6 @@ local function GetNextEvent(events)
     return nil
 end
 
-local function GetTimerProgress(event)
-    if not event or not event.timestamp then
-        return 0
-    end
-
-    local remaining = event.timestamp - time()
-    if remaining >= TIMER_FILL_WINDOW then
-        return 0
-    end
-
-    return Clamp(1 - (remaining / TIMER_FILL_WINDOW), 0, 1)
-end
-
 local function CreateFont(parent, size, template)
     local font = parent:CreateFontString(nil, "OVERLAY", template or "GameFontNormal")
     font:SetFont(STANDARD_TEXT_FONT, size, "")
@@ -437,11 +427,6 @@ local function CreateResizeGrip(parent, size, onStart, onStop)
     grip:SetSize(size, size)
     grip:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -1, 1)
     grip:SetFrameLevel((parent:GetFrameLevel() or 1) + 10)
-
-    grip.texture = grip:CreateTexture(nil, "OVERLAY")
-    grip.texture:SetSize(math.max(16, size * 0.58), math.max(16, size * 0.58))
-    grip.texture:SetPoint("BOTTOMRIGHT", grip, "BOTTOMRIGHT", -3, 3)
-    SetTextureColor(grip.texture, { 1, 1, 1, 0.22 })
 
     grip:SetScript("OnMouseDown", onStart)
     grip:SetScript("OnMouseUp", onStop)
@@ -663,7 +648,7 @@ local function BuildOptionsWindow()
     })
 
     optionsFrame.background = optionsFrame:CreateTexture(nil, "BACKGROUND")
-    optionsFrame.background:SetAllPoints(optionsFrame)
+    InsetTexture(optionsFrame.background, optionsFrame, OPTIONS_BG_INSET)
     SetVerticalGradient(optionsFrame.background, { 0.025, 0.025, 0.030, 0.98 }, { 0.12, 0.105, 0.09, 0.96 })
 
     optionsFrame.title = CreateFont(optionsFrame, 16, "GameFontHighlightLarge")
@@ -703,16 +688,13 @@ function LayoutMiniWindow()
     end
 
     local width, height = miniFrame:GetSize()
-    local padding = math.max(5, math.min(12, height * 0.14))
-    local iconSize = math.max(28, math.min(height - (padding * 2), width * 0.28))
-    local textWidth = math.max(48, width - iconSize - (padding * 3))
-    local sampleLength = 16
-    local fontSize = Clamp(math.min(height * 0.44, textWidth / (sampleLength * 0.54)), 9, 30)
+    local padding = math.max(5, math.min(11, height * 0.12))
+    local iconSize = math.max(26, math.min(height - (padding * 2), width * 0.24))
+    local textWidth = math.max(56, width - iconSize - (padding * 3))
+    local textLength = string.len(miniFrame.timerText:GetText() or "REND - 00:00:00")
+    local fontSize = Clamp(math.min(height * 0.52, textWidth / (math.max(12, textLength) * 0.43)), 10, 52)
 
-    miniFrame.background:SetAllPoints(miniFrame)
-    miniFrame.fill:SetPoint("LEFT", miniFrame, "LEFT", 0, 0)
-    miniFrame.fill:SetHeight(height)
-    miniFrame.fill:SetWidth(0)
+    InsetTexture(miniFrame.background, miniFrame, MINI_BG_INSET)
 
     miniFrame.icon:SetSize(iconSize, iconSize)
     miniFrame.icon:ClearAllPoints()
@@ -722,7 +704,7 @@ function LayoutMiniWindow()
     miniFrame.timerText:ClearAllPoints()
     miniFrame.timerText:SetPoint("LEFT", miniFrame.icon, "RIGHT", padding, 0)
     miniFrame.timerText:SetPoint("RIGHT", miniFrame, "RIGHT", -padding, 0)
-    miniFrame.timerText:SetJustifyH("LEFT")
+    miniFrame.timerText:SetJustifyH("CENTER")
 
     miniFrame.resizeGrip:SetSize(MINI_RESIZE_GRIP_SIZE, MINI_RESIZE_GRIP_SIZE)
 end
@@ -736,22 +718,18 @@ function UpdateMiniWindow()
     if not currentServer or not nextEvent then
         local style = BUFF_STYLES.default
         SetVerticalGradient(miniFrame.background, Darken(style.color, 0.34), style.color)
-        SetTextureColor(miniFrame.fill, { 0, 0, 0, 0 })
-        miniFrame.fill:SetWidth(0)
         miniFrame.icon:SetTexture(GetStyleIcon(style))
         miniFrame.timerText:SetText("NONE - --:--:--")
+        LayoutMiniWindow()
         return
     end
 
     local style = GetBuffStyle(nextEvent)
-    local width = miniFrame:GetWidth() or DB.mini.width
-    local progress = GetTimerProgress(nextEvent)
 
     SetVerticalGradient(miniFrame.background, Darken(style.color, 0.34), style.color)
-    SetVerticalGradient(miniFrame.fill, Darken(style.fillColor, 0.58), style.fillColor)
-    miniFrame.fill:SetWidth(width * progress)
     miniFrame.icon:SetTexture(GetStyleIcon(style))
     miniFrame.timerText:SetText(string.format("%s - %s", style.short, FormatCountdown(nextEvent.timestamp - time())))
+    LayoutMiniWindow()
 end
 
 local function BuildMiniWindow()
@@ -772,10 +750,7 @@ local function BuildMiniWindow()
     SetResizeBounds(miniFrame, MINI_MIN_WIDTH, MINI_MIN_HEIGHT, MINI_MAX_WIDTH, MINI_MAX_HEIGHT)
 
     miniFrame.background = miniFrame:CreateTexture(nil, "BACKGROUND")
-    miniFrame.background:SetAllPoints(miniFrame)
-
-    miniFrame.fill = miniFrame:CreateTexture(nil, "BORDER")
-    miniFrame.fill:SetPoint("LEFT", miniFrame, "LEFT", 0, 0)
+    InsetTexture(miniFrame.background, miniFrame, MINI_BG_INSET)
 
     miniFrame.icon = miniFrame:CreateTexture(nil, "ARTWORK")
     miniFrame.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
@@ -832,7 +807,7 @@ function LayoutMainWindow()
     local scrollHeight = math.max(96, height - scrollTop - bottomReserve)
     local childWidth = math.max(240, scrollWidth - 24)
 
-    WhenBuff.background:SetAllPoints(WhenBuff)
+    InsetTexture(WhenBuff.background, WhenBuff, MAIN_BG_INSET)
     SetVerticalGradient(WhenBuff.background, COLORS.mainTop, COLORS.mainBottom)
 
     WhenBuff.title:SetWidth(math.max(160, width - (padding * 2) - closeReserve))
@@ -887,7 +862,7 @@ local function BuildWindow()
     SetResizeBounds(WhenBuff, MAIN_MIN_WIDTH, MAIN_MIN_HEIGHT, MAIN_MAX_WIDTH, MAIN_MAX_HEIGHT)
 
     WhenBuff.background = WhenBuff:CreateTexture(nil, "BACKGROUND")
-    WhenBuff.background:SetAllPoints(WhenBuff)
+    InsetTexture(WhenBuff.background, WhenBuff, MAIN_BG_INSET)
 
     WhenBuff.title = CreateFont(WhenBuff, 18, "GameFontHighlightLarge")
     WhenBuff.title:SetPoint("TOPLEFT", WhenBuff, "TOPLEFT", 20, -18)
