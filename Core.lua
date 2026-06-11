@@ -38,6 +38,8 @@ local RefreshWindow
 local HandleSlashCommand
 local ToggleMiniWindow
 local ToggleOptionsWindow
+local ShowMainWindow
+local ShowMiniWindow
 
 local reminderThresholds = { 3600, 1800, 900, 300 }
 local reminderLabels = {
@@ -202,6 +204,14 @@ local function FormatDate(timestamp)
     return date("%d/%m/%Y", timestamp)
 end
 
+local function FormatRowTime(event)
+    if FormatDate(event.timestamp) == FormatDate(time()) then
+        return FormatClock(event.timestamp)
+    end
+
+    return date("%d/%m %H:%M", event.timestamp)
+end
+
 local function FormatCountdown(seconds)
     seconds = math.max(0, math.floor(seconds or 0))
 
@@ -351,18 +361,17 @@ local function GetServerEvents(serverName)
     return events
 end
 
-local function GetTodayEvents(events)
-    local today = date("%d/%m/%Y", time())
+local function GetUpcomingEvents(events)
     local now = time()
-    local todayEvents = {}
+    local upcomingEvents = {}
 
     for _, event in ipairs(events) do
-        if event.timestamp > now and FormatDate(event.timestamp) == today then
-            table.insert(todayEvents, event)
+        if event.timestamp > now then
+            table.insert(upcomingEvents, event)
         end
     end
 
-    return todayEvents
+    return upcomingEvents
 end
 
 local function GetNextEvent(events)
@@ -437,7 +446,7 @@ local function SetRowText(row, event, rowWidth)
     local style = GetBuffStyle(event)
     local color = style.textColor or COLORS.text
     local iconSize = 22
-    local timeWidth = 50
+    local timeWidth = 88
     local typeWidth = 78
     local factionWidth = 78
     local gap = 8
@@ -451,7 +460,7 @@ local function SetRowText(row, event, rowWidth)
     row.guild:SetWidth(guildWidth)
     row.faction:SetWidth(factionWidth)
 
-    row.time:SetText(FormatClock(event.timestamp))
+    row.time:SetText(FormatRowTime(event))
     row.type:SetText(style.short or event.type or "Buff")
     row.guild:SetText(event.guild or "")
     row.faction:SetText(TitleCase(event.faction == "both" and "both" or event.faction or ""))
@@ -500,7 +509,7 @@ local function CreateRow(index)
     return row
 end
 
-local function RefreshRows(todayEvents)
+local function RefreshRows(upcomingEvents)
     if not WhenBuff.scrollChild then
         return
     end
@@ -510,9 +519,9 @@ local function RefreshRows(todayEvents)
         row:Hide()
     end
 
-    WhenBuff.scrollChild:SetHeight(math.max(120, (#todayEvents * 40) + 28))
+    WhenBuff.scrollChild:SetHeight(math.max(120, (#upcomingEvents * 40) + 28))
 
-    if #todayEvents == 0 then
+    if #upcomingEvents == 0 then
         WhenBuff.emptyText:SetWidth(rowWidth)
         WhenBuff.emptyText:Show()
         return
@@ -520,7 +529,7 @@ local function RefreshRows(todayEvents)
 
     WhenBuff.emptyText:Hide()
 
-    for index, event in ipairs(todayEvents) do
+    for index, event in ipairs(upcomingEvents) do
         local row = rows[index] or CreateRow(index)
         row:ClearAllPoints()
         row:SetPoint("TOPLEFT", WhenBuff.listAnchor, "BOTTOMLEFT", 0, -((index - 1) * 40))
@@ -689,8 +698,10 @@ function LayoutMiniWindow()
 
     local width, height = miniFrame:GetSize()
     local padding = math.max(5, math.min(11, height * 0.12))
+    local buttonSize = Clamp(height * 0.28, 16, 22)
     local iconSize = math.max(26, math.min(height - (padding * 2), width * 0.24))
-    local textWidth = math.max(56, width - iconSize - (padding * 3))
+    local textRightPad = padding + buttonSize + 4
+    local textWidth = math.max(56, width - iconSize - (padding * 2) - textRightPad)
     local textLength = string.len(miniFrame.timerText:GetText() or "REND - 00:00:00")
     local fontSize = Clamp(math.min(height * 0.52, textWidth / (math.max(12, textLength) * 0.43)), 10, 52)
 
@@ -703,8 +714,12 @@ function LayoutMiniWindow()
     miniFrame.timerText:SetFont(STANDARD_TEXT_FONT, fontSize, "OUTLINE")
     miniFrame.timerText:ClearAllPoints()
     miniFrame.timerText:SetPoint("LEFT", miniFrame.icon, "RIGHT", padding, 0)
-    miniFrame.timerText:SetPoint("RIGHT", miniFrame, "RIGHT", -padding, 0)
+    miniFrame.timerText:SetPoint("RIGHT", miniFrame, "RIGHT", -textRightPad, 0)
     miniFrame.timerText:SetJustifyH("CENTER")
+
+    miniFrame.mainButton:SetSize(buttonSize, buttonSize)
+    miniFrame.mainButton:ClearAllPoints()
+    miniFrame.mainButton:SetPoint("TOPRIGHT", miniFrame, "TOPRIGHT", -padding, -padding)
 
     miniFrame.resizeGrip:SetSize(MINI_RESIZE_GRIP_SIZE, MINI_RESIZE_GRIP_SIZE)
 end
@@ -757,6 +772,12 @@ local function BuildMiniWindow()
 
     miniFrame.timerText = miniFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
     miniFrame.timerText:SetTextColor(1, 1, 1)
+
+    miniFrame.mainButton = CreateFrame("Button", nil, miniFrame, "UIPanelButtonTemplate")
+    miniFrame.mainButton:SetText("M")
+    miniFrame.mainButton:SetScript("OnClick", function()
+        ShowMainWindow()
+    end)
 
     miniFrame.resizeGrip = CreateResizeGrip(miniFrame, MINI_RESIZE_GRIP_SIZE, function()
         miniFrame:StartSizing("BOTTOMRIGHT")
@@ -837,7 +858,7 @@ function LayoutMainWindow()
     WhenBuff.miniButton:SetPoint("RIGHT", WhenBuff.optionsButton, "LEFT", -8, 0)
     WhenBuff.resizeGrip:SetSize(RESIZE_GRIP_SIZE, RESIZE_GRIP_SIZE)
 
-    RefreshRows(GetTodayEvents(currentEvents))
+    RefreshRows(GetUpcomingEvents(currentEvents))
 end
 
 local function BuildWindow()
@@ -884,7 +905,7 @@ local function BuildWindow()
     WhenBuff.nextText = CreateFont(WhenBuff, 14, "GameFontHighlight")
 
     WhenBuff.todayHeader = CreateFont(WhenBuff, 13, "GameFontHighlight")
-    WhenBuff.todayHeader:SetText("Upcoming Today")
+    WhenBuff.todayHeader:SetText("Upcoming Buffs")
 
     WhenBuff.scrollFrame = CreateFrame("ScrollFrame", nil, WhenBuff, "UIPanelScrollFrameTemplate")
     WhenBuff.scrollChild = CreateFrame("Frame", nil, WhenBuff.scrollFrame)
@@ -957,8 +978,8 @@ function RefreshWindow()
         local server = DATA.servers[currentServer]
         WhenBuff.title:SetText("WhenBuff - " .. currentServer)
         WhenBuff.realmText:SetText(string.format("%s realm, %s, %s", server.region or "Unknown", server.timezone or "server time", TitleCase(playerFaction or "unknown faction")))
-        WhenBuff.emptyText:SetText("No buffs remaining today.")
-        RefreshRows(GetTodayEvents(currentEvents))
+        WhenBuff.emptyText:SetText("No upcoming buffs in loaded data.")
+        RefreshRows(GetUpcomingEvents(currentEvents))
     else
         WhenBuff.title:SetText("WhenBuff - " .. (GetPlayerRealmName() or "Unknown realm"))
         WhenBuff.realmText:SetText("No WhenBuff data for this realm")
@@ -1027,10 +1048,31 @@ local function OnTick()
     CheckReminders()
 end
 
-local function ShowWindow()
+function ShowMainWindow()
     DB.hidden = false
+    if miniFrame and DB.mini then
+        DB.mini.hidden = true
+        miniFrame:Hide()
+    end
+
     RefreshWindow()
     WhenBuff:Show()
+end
+
+function ShowMiniWindow()
+    if not miniFrame then
+        return
+    end
+
+    DB.hidden = true
+    DB.mini.hidden = false
+    WhenBuff:Hide()
+    UpdateMiniWindow()
+    miniFrame:Show()
+end
+
+local function ShowWindow()
+    ShowMainWindow()
 end
 
 local function ToggleWindow()
@@ -1048,12 +1090,9 @@ function ToggleMiniWindow()
     end
 
     if miniFrame:IsShown() then
-        DB.mini.hidden = true
-        miniFrame:Hide()
+        ShowMainWindow()
     else
-        DB.mini.hidden = false
-        UpdateMiniWindow()
-        miniFrame:Show()
+        ShowMiniWindow()
     end
 end
 
@@ -1065,6 +1104,10 @@ function HandleSlashCommand(input)
     elseif input == "hide" then
         DB.hidden = true
         WhenBuff:Hide()
+        if miniFrame and DB.mini then
+            DB.mini.hidden = true
+            miniFrame:Hide()
+        end
     elseif input == "refresh" then
         RefreshWindow()
         Print("Display refreshed from loaded data.")
@@ -1087,12 +1130,11 @@ local function OnLogin()
     ClearOldReminderKeys()
     RefreshWindow()
 
-    if not DB.hidden then
-        WhenBuff:Show()
-    end
-
     if not DB.mini.hidden then
+        DB.hidden = true
         miniFrame:Show()
+    elseif not DB.hidden then
+        WhenBuff:Show()
     end
 
     C_Timer.NewTicker(1, OnTick)
