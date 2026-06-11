@@ -2,7 +2,7 @@
 ## Title: WhenBuff In-Game
 ## Notes: Shows WhenBuff world buff timers for your current WoW Classic realm.
 ## Author: 03h043-glitch
-## Version: 0.3.2
+## Version: 0.3.1
 ## SavedVariables: WhenBuffInGameDB
 
 Data.lua
