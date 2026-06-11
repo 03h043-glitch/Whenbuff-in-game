@@ -22,7 +22,7 @@ jobs:
           node-version: "22"
 
       - name: Generate Data.lua
-        run: node tools/update-data.js --days 21
+        run: node tools/update-data.js --days 35
 
       - name: Commit updated data
         uses: stefanzweifel/git-auto-commit-action@v5
