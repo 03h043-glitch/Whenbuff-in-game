@@ -23,7 +23,7 @@ const TIMEZONE_OFFSETS = {
 };
 
 function parseArgs(argv) {
-  const args = { days: 21 };
+  const args = { days: 35 };
 
   for (let index = 2; index < argv.length; index += 1) {
     const arg = argv[index];
