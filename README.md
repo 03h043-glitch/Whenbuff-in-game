@@ -15,7 +15,7 @@ WoW Classic addon for showing upcoming WhenBuff world buff drops for the realm y
 
 WoW addons cannot make live HTTP requests while the game is running. This addon uses a generated `Data.lua` file that is refreshed from `https://api.whenbuff.com`.
 
-For current data, run the updater before launching WoW or rely on the included GitHub Action to refresh `Data.lua` on a schedule.
+For current data, use the local scheduled refresh below or rely on the included GitHub Action to refresh the repository copy of `Data.lua` on a schedule.
 
 ## Install
 
@@ -44,10 +44,33 @@ Both windows can be dragged and resized from a larger bottom-right handle. The m
 Run:
 
 ```powershell
-node tools/update-data.js --days 35
+powershell -ExecutionPolicy Bypass -File tools\update-data.ps1 -Days 60
 ```
 
 The script fetches WhenBuff servers and future buffs, then rewrites `Data.lua`.
+
+## Automatic Local Refresh
+
+Install a Windows scheduled task from the addon folder:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\install-daily-refresh.ps1
+```
+
+By default this refreshes `Data.lua` once immediately, once every day at 07:00, and once when you log into Windows. It uses a 60-day lookahead so future scheduled buffs are gathered as well.
+
+Optional examples:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\install-daily-refresh.ps1 -DailyAt 12:00
+powershell -ExecutionPolicy Bypass -File tools\install-daily-refresh.ps1 -Days 90
+```
+
+If WoW is already open when `Data.lua` changes, run `/reload` so the addon reloads the updated file. The in-game `/wb refresh` command refreshes the display from data already loaded by WoW; it cannot fetch the website directly.
+
+## Repository Refresh
+
+The GitHub Action refreshes the repository copy of `Data.lua` every 6 hours with the same 60-day lookahead. That keeps the repo current, while the Windows scheduled task keeps your installed addon folder current.
 
 ## Current Supported Realms
 
