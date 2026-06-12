@@ -2,7 +2,7 @@ name: Update WhenBuff Data
 
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "17 */6 * * *"
   workflow_dispatch:
 
 permissions:
@@ -22,7 +22,7 @@ jobs:
           node-version: "22"
 
       - name: Generate Data.lua
-        run: node tools/update-data.js --days 35
+        run: node tools/update-data.js --days 60
 
       - name: Commit updated data
         uses: stefanzweifel/git-auto-commit-action@v5
