@@ -29,6 +29,7 @@ local MINI_RESIZE_GRIP_SIZE = 42
 local MAIN_BG_INSET = 7
 local MINI_BG_INSET = 4
 local OPTIONS_BG_INSET = 5
+local DATA_STALE_SECONDS = 26 * 3600
 
 local LayoutMainWindow
 local LayoutMiniWindow
@@ -227,6 +228,74 @@ local function FormatCountdown(seconds)
     end
 
     return string.format("%02d:%02d:%02d", hours, minutes, secs)
+end
+
+local function ParseGeneratedAt(value)
+    if not value then
+        return nil
+    end
+
+    local year, month, day, hour, minute, second = string.match(value, "^(%d%d%d%d)%-(%d%d)%-(%d%d)T(%d%d):(%d%d):(%d%d)")
+    if not year then
+        return nil
+    end
+
+    return time({
+        year = tonumber(year),
+        month = tonumber(month),
+        day = tonumber(day),
+        hour = tonumber(hour),
+        min = tonumber(minute),
+        sec = tonumber(second),
+    })
+end
+
+local function GetDataAgeSeconds()
+    local generatedAt = ParseGeneratedAt(DATA.generatedAt)
+    if not generatedAt then
+        return nil
+    end
+
+    return math.max(0, time() - generatedAt)
+end
+
+local function FormatDataAge(seconds)
+    if not seconds then
+        return nil
+    end
+
+    if seconds < 3600 then
+        return "<1h old"
+    end
+
+    if seconds < 86400 then
+        return string.format("%dh old", math.floor(seconds / 3600))
+    end
+
+    return string.format("%dd %dh old", math.floor(seconds / 86400), math.floor((seconds % 86400) / 3600))
+end
+
+local function IsDataStale()
+    local age = GetDataAgeSeconds()
+    return age and age > DATA_STALE_SECONDS
+end
+
+local function FormatGeneratedText()
+    if not DATA.generatedAt then
+        return "Data: unavailable"
+    end
+
+    local generatedText = "Data: " .. DATA.generatedAt
+    local ageText = FormatDataAge(GetDataAgeSeconds())
+    if ageText then
+        generatedText = generatedText .. " (" .. ageText .. ")"
+    end
+
+    if DATA.lookaheadDays then
+        generatedText = generatedText .. ", " .. DATA.lookaheadDays .. "d lookahead"
+    end
+
+    return generatedText
 end
 
 local function TitleCase(value)
@@ -971,8 +1040,7 @@ function RefreshWindow()
     currentServer = FindCurrentServer()
     currentEvents = GetServerEvents(currentServer)
 
-    local generatedText = DATA.generatedAt and ("Data: " .. DATA.generatedAt) or "Data: unavailable"
-    WhenBuff.generatedText:SetText(generatedText)
+    WhenBuff.generatedText:SetText(FormatGeneratedText())
 
     if currentServer then
         local server = DATA.servers[currentServer]
@@ -1147,6 +1215,10 @@ local function OnLogin()
         Print("Tracking " .. currentServer .. ".")
     else
         Print("No WhenBuff data found for " .. (GetPlayerRealmName() or "this realm") .. ".")
+    end
+
+    if IsDataStale() then
+        Print("Loaded data is more than a day old. Run the scheduled updater, then /reload if WoW is already open.")
     end
 end
 
